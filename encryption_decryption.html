@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnyCript Pro - All-in-One Utility Tool</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+        }
+    </script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .dark ::-webkit-scrollbar {
+            width: 8px;
+        }
+        .dark ::-webkit-scrollbar-track {
+            background: #374151;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #6B7280;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #9CA3AF;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        function AnyCriptPro() {
+            const [darkMode, setDarkMode] = useState(false);
+            const [activeTab, setActiveTab] = useState("crypto");
+            
+            // Input / Output
+            const [inputText, setInputText] = useState("");
+            const [outputText, setOutputText] = useState("");
+            const [password, setPassword] = useState("");
+            const [iterations, setIterations] = useState(100000);
+            
+            // File Encryption
+            const [selectedFile, setSelectedFile] = useState(null);
+            const [fileProgress, setFileProgress] = useState(0);
+            const fileInputRef = useRef(null);
+            const downloadLinkRef = useRef(null);
+            
+            // Finance
+            const [fdPrincipal, setFdPrincipal] = useState(10000);
+            const [fdRate, setFdRate] = useState(6.5);
+            const [fdYears, setFdYears] = useState(1);
+            const [fdResult, setFdResult] = useState(null);
+            
+            const [sipAmount, setSipAmount] = useState(1000);
+            const [sipRate, setSipRate] = useState(12);
+            const [sipMonths, setSipMonths] = useState(12);
+            const [sipResult, setSipResult] = useState(null);
+            
+            // Utility Functions
+            const strToBuf = (str) => new TextEncoder().encode(str);
+            const bufToStr = (buf) => new TextDecoder().decode(buf);
+            const bufToHex = (buf) => Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+            const b64Encode = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+            const b64Decode = (b64) => {
+                try {
+                    const binaryString = atob(b64);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    return bytes.buffer;
+                } catch (e) {
+                    throw new Error("Invalid Base64 string");
+                }
+            };
+            
+            // AES Key Derivation
+            async function deriveAesKey(password, salt, keyLen=256) {
+                const pwKey = await crypto.subtle.importKey(
+                    "raw", 
+                    strToBuf(password), 
+                    { name: "PBKDF2" }, 
+                    false, 
+                    ["deriveKey"]
+                );
+                return crypto.subtle.deriveKey(
+                    { 
+                        name: "PBKDF2", 
+                        salt: strToBuf(salt), 
+                        iterations, 
+                        hash: "SHA-256" 
+                    }, 
+                    pwKey, 
+                    { 
+                        name: "AES-GCM", 
+                        length: keyLen 
+                    }, 
+                    false, 
+                    ["encrypt", "decrypt"]
+                );
+            }
+            
+            // AES Encrypt / Decrypt
+            async function handleAesEncrypt() {
+                try {
+                    if (!password) {
+                        setOutputText("Error: Password is required");
+                        return;
+                    }
+                    
+                    if (!inputText) {
+                        setOutputText("Error: Please enter text to encrypt");
+                        return;
+                    }
+                    
+                    const iv = crypto.getRandomValues(new Uint8Array(12));
+                    const salt = crypto.getRandomValues(new Uint8Array(16));
+                    const key = await deriveAesKey(password, salt);
+                    const cipher = await crypto.subtle.encrypt(
+                        { 
+                            name: "AES-GCM", 
+                            iv 
+                        }, 
+                        key, 
+                        strToBuf(inputText)
+                    );
+                    
+                    const combined = new Uint8Array(salt.length + iv.length + cipher.byteLength);
+                    combined.set(salt, 0);
+                    combined.set(iv, salt.length);
+                    combined.set(new Uint8Array(cipher), salt.length + iv.length);
+                    
+                    setOutputText(b64Encode(combined));
+                } catch(e){ 
+                    setOutputText("Error: " + e.message); 
+                }
+            }
+            
+            async function handleAesDecrypt() {
+                try {
+                    if (!password) {
+                        setOutputText("Error: Password is required");
+                        return;
+                    }
+                    
+                    if (!inputText) {
+                        setOutputText("Error: Please enter text to decrypt");
+                        return;
+                    }
+                    
+                    const combined = new Uint8Array(b64Decode(inputText));
+                    const salt = combined.slice(0, 16);
+                    const iv = combined.slice(16, 28);
+                    const cipher = combined.slice(28);
+                    
+                    const key = await deriveAesKey(password, salt);
+                    const plain = await crypto.subtle.decrypt(
+                        { 
+                            name: "AES-GCM", 
+                            iv 
+                        }, 
+                        key, 
+                        cipher
+                    );
+                    
+                    setOutputText(bufToStr(plain));
+                } catch(e){ 
+                    setOutputText("Error: Invalid password or data"); 
+                }
+            }
+            
+            // Hash Functions
+            async function handleSha256() { 
+                try { 
+                    if (!inputText) {
+                        setOutputText("Error: Please enter text to hash");
+                        return;
+                    }
+                    
+                    const hash = await crypto.subtle.digest("SHA-256", strToBuf(inputText)); 
+                    setOutputText(bufToHex(hash)); 
+                } catch(e){ 
+                    setOutputText("Error: " + e.message); 
+                } 
+            }
+            
+            async function handlePbkdf2() { 
+                try {
+                    if (!password) {
+                        setOutputText("Error: Password is required");
+                        return;
+                    }
+                    
+                    const salt = crypto.getRandomValues(new Uint8Array(16));
+                    const keyMaterial = await crypto.subtle.importKey(
+                        "raw",
+                        strToBuf(password),
+                        { name: "PBKDF2" },
+                        false,
+                        ["deriveBits"]
+                    );
+                    
+                    const result = await crypto.subtle.deriveBits(
+                        {
+                            name: "PBKDF2",
+                            salt: salt,
+                            iterations: iterations,
+                            hash: "SHA-256"
+                        }, 
+                        keyMaterial, 
+                        256
+                    );
+                    
+                    const combined = new Uint8Array(salt.length + result.byteLength);
+                    combined.set(salt, 0);
+                    combined.set(new Uint8Array(result), salt.length);
+                    
+                    setOutputText(bufToHex(combined));
+                } catch(e){ 
+                    setOutputText("Error: " + e.message); 
+                } 
+            }
+            
+            // Base64 Encode/Decode
+            function handleBase64Encode(){ 
+                try{ 
+                    if (!inputText) {
+                        setOutputText("Error: Please enter text to encode");
+                        return;
+                    }
+                    
+                    setOutputText(b64Encode(strToBuf(inputText))); 
+                } catch(e){ 
+                    setOutputText("Error: " + e.message); 
+                } 
+            }
+            
+            function handleBase64Decode(){ 
+                try{ 
+                    if (!inputText) {
+                        setOutputText("Error: Please enter text to decode");
+                        return;
+                    }
+                    
+                    setOutputText(bufToStr(b64Decode(inputText))); 
+                } catch(e){ 
+                    setOutputText("Error: Invalid Base64 string"); 
+                } 
+            }
+            
+            // File Encryption - Fixed download functionality
+            async function handleFileEncrypt() {
+                if (!selectedFile) {
+                    setOutputText("Error: Please select a file first");
+                    return;
+                }
+                
+                if (!password) {
+                    setOutputText("Error: Password is required");
+                    return;
+                }
+                
+                try {
+                    setFileProgress(10);
+                    const fileBuffer = await selectedFile.arrayBuffer();
+                    setFileProgress(30);
+                    
+                    const iv = crypto.getRandomValues(new Uint8Array(12));
+                    const salt = crypto.getRandomValues(new Uint8Array(16));
+                    const key = await deriveAesKey(password, salt);
+                    setFileProgress(60);
+                    
+                    const cipher = await crypto.subtle.encrypt(
+                        { 
+                            name: "AES-GCM", 
+                            iv 
+                        }, 
+                        key, 
+                        fileBuffer
+                    );
+                    
+                    setFileProgress(90);
+                    
+                    const combined = new Uint8Array(salt.length + iv.length + cipher.byteLength);
+                    combined.set(salt, 0);
+                    combined.set(iv, salt.length);
+                    combined.set(new Uint8Array(cipher), salt.length + iv.length);
+                    
+                    const encryptedBlob = new Blob([combined]);
+                    
+                    // Create and trigger download
+                    const url = URL.createObjectURL(encryptedBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${selectedFile.name}.encrypted`;
+                    document.body.appendChild(a);
+                    a.click();
+                    
+                    // Clean up
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }, 100);
+                    
+                    setFileProgress(100);
+                    setOutputText(`File encrypted successfully: ${selectedFile.name}.encrypted`);
+                    
+                    // Reset progress after 2 seconds
+                    setTimeout(() => setFileProgress(0), 2000);
+                } catch(e) {
+                    setOutputText("Error: " + e.message);
+                    setFileProgress(0);
+                }
+            }
+            
+            async function handleFileDecrypt() {
+                if (!selectedFile) {
+                    setOutputText("Error: Please select a file first");
+                    return;
+                }
+                
+                if (!password) {
+                    setOutputText("Error: Password is required");
+                    return;
+                }
+                
+                try {
+                    setFileProgress(10);
+                    const fileBuffer = await selectedFile.arrayBuffer();
+                    setFileProgress(30);
+                    
+                    const combined = new Uint8Array(fileBuffer);
+                    const salt = combined.slice(0, 16);
+                    const iv = combined.slice(16, 28);
+                    const cipher = combined.slice(28);
+                    
+                    const key = await deriveAesKey(password, salt);
+                    setFileProgress(60);
+                    
+                    const plain = await crypto.subtle.decrypt(
+                        { 
+                            name: "AES-GCM", 
+                            iv 
+                        }, 
+                        key, 
+                        cipher
+                    );
+                    
+                    setFileProgress(90);
+                    const decryptedBlob = new Blob([plain]);
+                    
+                    // Extract original file name (remove .encrypted extension if present)
+                    let originalName = selectedFile.name;
+                    if (originalName.endsWith('.encrypted')) {
+                        originalName = originalName.slice(0, -10);
+                    }
+                    
+                    // Create and trigger download
+                    const url = URL.createObjectURL(decryptedBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `decrypted_${originalName}`;
+                    document.body.appendChild(a);
+                    a.click();
+                    
+                    // Clean up
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }, 100);
+                    
+                    setFileProgress(100);
+                    setOutputText(`File decrypted successfully: decrypted_${originalName}`);
+                    
+                    // Reset progress after 2 seconds
+                    setTimeout(() => setFileProgress(0), 2000);
+                } catch(e) {
+                    setOutputText("Error: Invalid password or file format");
+                    setFileProgress(0);
+                }
+            }
+            
+            // FD / SIP Calculators
+            function calcFD(){ 
+                const P = Number(fdPrincipal);
+                const r = Number(fdRate) / 100;
+                const t = Number(fdYears);
+                const A = P * Math.pow(1 + r, t);
+                
+                setFdResult({ 
+                    maturity: A.toFixed(2), 
+                    interest: (A - P).toFixed(2) 
+                }); 
+            }
+            
+            function calcSIP(){ 
+                const P = Number(sipAmount);
+                const r = Number(sipRate) / 100 / 12;
+                const n = Number(sipMonths);
+                const fv = P * ((Math.pow(1 + r, n) - 1) / r) * (1 + r);
+                
+                setSipResult({ 
+                    fv: fv.toFixed(2),
+                    invested: (P * n).toFixed(2),
+                    earnings: (fv - P * n).toFixed(2)
+                }); 
+            }
+            
+            // File Selection
+            function handleFileSelect(e) {
+                const file = e.target.files[0];
+                setSelectedFile(file);
+                setOutputText(file ? `File selected: ${file.name}` : "No file selected");
+            }
+            
+            // Toggle Dark Mode
+            useEffect(() => { 
+                if (darkMode) {
+                    document.body.classList.add('bg-gray-900', 'text-white');
+                    document.body.classList.remove('bg-gray-50', 'text-gray-900');
+                } else {
+                    document.body.classList.add('bg-gray-50', 'text-gray-900');
+                    document.body.classList.remove('bg-gray-900', 'text-white');
+                }
+            }, [darkMode]);
+            
+            // Tabs
+            const tabs = [
+                { id: "crypto", name: "Cryptography" },
+                { id: "file", name: "File Tools" },
+                { id: "finance", name: "Finance" }
+            ];
+            
+            return (
+                <div className={`min-h-screen p-4 transition-colors duration-500 ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
+                    <div className="fade-in max-w-6xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-4 md:p-6">
+                        <header className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-4">
+                            <h1 className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+                                AnyCript Pro
+                            </h1>
+                            <button 
+                                onClick={() => setDarkMode(!darkMode)} 
+                                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                            >
+                                {darkMode ? 'Light Mode' : 'Dark Mode'}
+                            </button>
+                        </header>
+                        
+                        <nav className="flex flex-wrap gap-2 mb-6">
+                            {tabs.map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`px-3 py-2 rounded-lg transition-colors text-sm md:text-base ${
+                                        activeTab === tab.id 
+                                            ? 'bg-blue-600 text-white' 
+                                            : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
+                                    }`}
+                                >
+                                    {tab.name}
+                                </button>
+                            ))}
+                        </nav>
+                        
+                        <main className="space-y-6">
+                            {activeTab === "crypto" && (
+                                <section className="fade-in p-4 border dark:border-gray-700 rounded-lg">
+                                    <h2 className="font-semibold text-xl mb-4">Cryptography Tools</h2>
+                                    <textarea 
+                                        value={inputText} 
+                                        onChange={(e) => setInputText(e.target.value)} 
+                                        rows={4} 
+                                        className="w-full border dark:border-gray-600 p-3 rounded-lg mb-3 dark:bg-gray-700" 
+                                        placeholder="Enter text here" 
+                                    />
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                        <div>
+                                            <label className="block mb-1 font-medium">Password</label>
+                                            <input 
+                                                type="password" 
+                                                value={password} 
+                                                onChange={(e) => setPassword(e.target.value)} 
+                                                className="w-full border dark:border-gray-600 p-2 rounded-lg dark:bg-gray-700" 
+                                                placeholder="Encryption password" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block mb-1 font-medium">PBKDF2 Iterations</label>
+                                            <input 
+                                                type="number" 
+                                                value={iterations} 
+                                                onChange={(e) => setIterations(Number(e.target.value))} 
+                                                className="w-full border dark:border-gray-600 p-2 rounded-lg dark:bg-gray-700" 
+                                                placeholder="Iterations" 
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex flex-wrap gap-2 mb-4">
+                                        <button onClick={handleAesEncrypt} className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm">
+                                            AES Encrypt
+                                        </button>
+                                        <button onClick={handleAesDecrypt} className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm">
+                                            AES Decrypt
+                                        </button>
+                                        <button onClick={handleSha256} className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm">
+                                            SHA-256
+                                        </button>
+                                        <button onClick={handlePbkdf2} className="px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors text-sm">
+                                            PBKDF2
+                                        </button>
+                                        <button onClick={handleBase64Encode} className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm">
+                                            Base64 Encode
+                                        </button>
+                                        <button onClick={handleBase64Decode} className="px-3 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors text-sm">
+                                            Base64 Decode
+                                        </button>
+                                    </div>
+                                    
+                                    <textarea 
+                                        value={outputText} 
+                                        readOnly 
+                                        rows={4} 
+                                        className="w-full border dark:border-gray-600 p-3 rounded-lg bg-gray-100 dark:bg-gray-700" 
+                                        placeholder="Output will appear here" 
+                                    />
+                                </section>
+                            )}
+                            
+                            {activeTab === "file" && (
+                                <section className="fade-in p-4 border dark:border-gray-700 rounded-lg">
+                                    <h2 className="font-semibold text-xl mb-4">File Encryption Tools</h2>
+                                    
+                                    <div className="mb-4">
+                                        <label className="block mb-2 font-medium">Select File</label>
+                                        <input 
+                                            type="file" 
+                                            ref={fileInputRef}
+                                            onChange={handleFileSelect} 
+                                            className="w-full border dark:border-gray-600 p-2 rounded-lg dark:bg-gray-700" 
+                                        />
+                                        {selectedFile && (
+                                            <p className="mt-2 text-sm text-blue-600 dark:text-blue-400">
+                                                Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(2)} KB)
+                                            </p>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                        <div>
+                                            <label className="block mb-1 font-medium">Password</label>
+                                            <input 
+                                                type="password" 
+                                                value={password} 
+                                                onChange={(e) => setPassword(e.target.value)} 
+                                                className="w-full border dark:border-gray-600 p-2 rounded-lg dark:bg-gray-700" 
+                                                placeholder="Encryption password" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block mb-1 font-medium">PBKDF2 Iterations</label>
+                                            <input 
+                                                type="number" 
+                                                value={iterations} 
+                                                onChange={(e) => setIterations(Number(e.target.value))} 
+                                                className="w-full border dark:border-gray-600 p-2 rounded-lg dark:bg-gray-700" 
+                                                placeholder="Iterations" 
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex flex-wrap gap-2 mb-4">
+                                        <button 
+                                            onClick={handleFileEncrypt} 
+                                            disabled={!selectedFile || fileProgress > 0}
+                                            className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm"
+                                        >
+                                            Encrypt File
+                                        </button>
+                                        <button 
+                                            onClick={handleFileDecrypt} 
+                                            disabled={!selectedFile || fileProgress > 0}
+                                            className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 text-sm"
+                                        >
+                                            Decrypt File
+                                        </button>
+                                    </div>
+                                    
+                                    {fileProgress > 0 && (
+                                        <div className="mb-4">
+                                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                                                <div 
+                                                    className="progress-bar bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
+                                                    style={{ width: `${fileProgress}%` }}
+                                                ></div>
+                                            </div>
+                                            <p className="text-center mt-1 text-sm">{fileProgress}% Complete</p>
+                                        </div>
+                                    )}
+                                    
+                                    <textarea 
+                                        value={outputText} 
+                                        readOnly 
+                                        rows={2} 
+                                        className="w-full border dark:border-gray-600 p-3 rounded-lg bg-gray-100 dark:bg-gray-700" 
+                                        placeholder="Status information will appear here" 
+                                    />
+                                </section>
+                            )}
+                            
+                            {activeTab === "finance" && (
+                                <section className="fade-in p-4 border dark:border-gray-700 rounded-lg">
+                                    <h2 className="font-semibold text-xl mb-4">Financial Calculators</h2>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="p-4 border dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700">
+                                            <h3 className="font-semibold text-lg mb-3">Fixed Deposit Calculator</h3>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="block mb-1">Principal Amount (₹)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        value={fdPrincipal} 
+                                                        onChange={(e) => setFdPrincipal(e.target.value)} 
+                                                        className="w-full border dark:border-gray-600 p-2 rounded-lg dark:bg-gray-600" 
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block mb-1">Annual Interest Rate (%)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        value={fdRate} 
+                                                        onChange={(e) => setFdRate(e.target.value)} 
+                                                        step="0.1"
+                                                        className="w-full border dark:border-gray-600 p-2 rounded-lg dark:bg-gray-600" 
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block mb-1">Time Period (Years)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        value={fdYears} 
+                                                        onChange={(e) => setFdYears(e.target.value)} 
+                                                        className="w-full border dark:border-gray-600 p-2 rounded-lg dark:bg-gray-600" 
+                                                    />
+                                                </div>
+                                                <button 
+                                                    onClick={calcFD} 
+                                                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                                >
+                                                    Calculate
+                                                </button>
+                                                
+                                                {fdResult && (
+                                                    <div className="mt-4 p-3 bg-green-100 dark:bg-green-800 rounded-lg">
+                                                        <h4 className="font-semibold mb-2">FD Calculation Results</h4>
+                                                        <p>Maturity Value: <span className="font-semibold">₹{fdResult.maturity}</span></p>
+                                                        <p>Interest Earned: <span className="font-semibold">₹{fdResult.interest}</span></p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="p-4 border dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700">
+                                            <h3 className="font-semibold text-lg mb-3">SIP Calculator</h3>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="block mb-1">Monthly Investment (₹)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        value={sipAmount} 
+                                                        onChange={(e) => setSipAmount(e.target.value)} 
+                                                        className="w-full border dark:border-gray-600 p-2 rounded-lg dark:bg-gray-600" 
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block mb-1">Expected Annual Return (%)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        value={sipRate} 
+                                                        onChange={(e) => setSipRate(e.target.value)} 
+                                                        step="0.1"
+                                                        className="w-full border dark:border-gray-600 p-2 rounded-lg dark:bg-gray-600" 
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block mb-1">Investment Period (Months)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        value={sipMonths} 
+                                                        onChange={(e) => setSipMonths(e.target.value)} 
+                                                        className="w-full border dark:border-gray-600 p-2 rounded-lg dark:bg-gray-600" 
+                                                    />
+                                                </div>
+                                                <button 
+                                                    onClick={calcSIP} 
+                                                    className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                                                >
+                                                    Calculate
+                                                </button>
+                                                
+                                                {sipResult && (
+                                                    <div className="mt-4 p-3 bg-blue-100 dark:bg-blue-800 rounded-lg">
+                                                        <h4 className="font-semibold mb-2">SIP Calculation Results</h4>
+                                                        <p>Estimated Future Value: <span className="font-semibold">₹{sipResult.fv}</span></p>
+                                                        <p>Total Invested: <span className="font-semibold">₹{sipResult.invested}</span></p>
+                                                        <p>Estimated Earnings: <span className="font-semibold">₹{sipResult.earnings}</span></p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
+                            )}
+                        </main>
+                        
+                        <footer className="mt-8 pt-4 border-t dark:border-gray-700 text-center text-sm text-gray-500 dark:text-gray-400">
+                            <p>AnyCript Pro - All your encryption and calculation tools in one place</p>
+                        </footer>
+                    </div>
+                </div>
+            );
+        }
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<AnyCriptPro />);
+    </script>
+</body>
+</html>

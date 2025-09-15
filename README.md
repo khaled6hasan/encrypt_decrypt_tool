@@ -79,7 +79,7 @@ cd anycript-pro
 
 ## Screenshots
 
-
+![encryption_decryption](https://github.com/khaled6hasan/encrypt_decrypt_tool/blob/main/encryption_decryption.PNG)
 ---
 
 ## Technologies Used
